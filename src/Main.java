@@ -1,20 +1,26 @@
+import com.Ipl.connection.connection_provider;
+import com.Ipl.dao.deliveriesDao;
+import com.Ipl.dao.matchesDao;
+import com.Ipl.entities.Delivery;
+import com.Ipl.entities.Match;
+
 import java.io.BufferedReader;
 import java.io.FileReader;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.*;
 
 public class Main {
-    static final int ID = 0, SEASON = 1, CITY = 2, DATE = 3, TEAM1 = 4, TEAM2 = 5, TOSS_WINNER = 6, TOSS_DECISION = 7,
-            RESULT = 8, DL_APPLIED = 9, WINNER = 10, WIN_BY_RUNS = 11, WIN_BY_WICKETS = 12, PLAYER_OF_MATCH = 13,
-            VENUE = 14, UMPIRE1 = 15, UMPIRE2 = 16, UMPIRE3 = 17;
 
-    static final int MATCH_ID = 0, INNING = 1, BATTING_TEAM = 2, BOWLING_TEAM = 3, OVER = 4, BAlL = 5, BATSMAN = 6,
-            NON_STRIKER = 7, BOWLER = 8, IS_SUPER_OVER = 9, WIDE_RUNS = 10, BYE_RUNS = 11, LEGBYE_RUNS = 12,
-            NOBALL_RUNS = 13, PENALTY_RUNS = 14, BATSMAN_RUN = 15, EXTRA_RUNS = 16, TOTAL_RUNS = 17,
-            PLAYER_DISMISSED = 18, DISMISSAL_KIND = 19, FIELDER = 20;
+    static Connection connection = null;
 
     public static void main(String[] args) {
-        List<Match> matches = getMatchesData();
-        List<Delivery> deliveries = getDeliveryData();
+        connection = connection_provider.getConnection();
+        matchesDao matchesDao = new matchesDao(connection);
+        List<Match> matches = matchesDao.getMatchesData();
+        deliveriesDao deliveriesDao = new deliveriesDao(connection);
+        List<Delivery> deliveries = deliveriesDao.getDeliveries();
 
         findMatchesPlayedPerYear(matches);
         findMatchesWonPerTeam(matches);
@@ -23,159 +29,102 @@ public class Main {
         findTotalMatchesPlayedPerCity(matches);
     }
 
-    private static void findTotalMatchesPlayedPerCity(List<Match> matchesData) {
+    private static void findTotalMatchesPlayedPerCity(List<Match> matches) {
         HashMap<String, Integer> totalMatchesPlayedPerCity = new HashMap<>();
-        for (Match match : matchesData) {
-            if (totalMatchesPlayedPerCity.containsKey(match.getCity())) {
-                totalMatchesPlayedPerCity.put(match.getCity(), totalMatchesPlayedPerCity.get(match.getCity()) + 1);
-            } else {
-                totalMatchesPlayedPerCity.put(match.getCity(), 1);
+        String query = "select ipl.matches.city, count(ipl.matches.city) as total_matches from ipl.matches group by ipl.matches.city";
+        try {
+            Statement statement = connection.createStatement();
+            ResultSet resultSet = statement.executeQuery(query);
+            while (resultSet.next()) {
+                String city = resultSet.getString("city");
+                Integer totalMatches = resultSet.getInt("total_matches");
+                totalMatchesPlayedPerCity.put(city, totalMatches);
             }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        // if totalMatchesPlayedPerCity contains empty key
-        totalMatchesPlayedPerCity.remove("");
 
-        System.out.println("\n\nCITY => MATCHES");
+        totalMatchesPlayedPerCity.remove(""); //if totalMatchesPlayedPerCity contains "" key
+
+        System.out.println("CITY => TOTAL_MATCHES");
         for (Map.Entry<String, Integer> entry : totalMatchesPlayedPerCity.entrySet())
             System.out.println(entry.getKey() +
                     " => " + entry.getValue());
+
     }
 
 
-    private static void findEconomicalBowlersPerRunGivenIn2015(List<Match> matchesData, List<Delivery> deliveriesData) {
-        HashMap<String, Integer> bowlerPerRunGiven = new HashMap<>();
-        LinkedHashSet<String> matchIds = new LinkedHashSet<>();
-        for (Match match : matchesData) {
-            if (match.getSeason().equals("2015")) {
-                matchIds.add(match.getId());
+    private static void findEconomicalBowlersPerRunGivenIn2015(List<Match> matches, List<Delivery> deliveries) {
+        LinkedHashMap<String, Integer> bowlerPerRunGiven = new LinkedHashMap<>();
+        String query = """
+                select ipl.deliveries.bowler,sum(ipl.deliveries.total_runs) as runs_given\s
+                from ipl.deliveries\s
+                inner join ipl.matches on ipl.matches.id=ipl.deliveries.match_id\s
+                where ipl.matches.season='2015'
+                group by ipl.deliveries.bowler\s
+                order by sum(ipl.deliveries.total_runs);""";
+        try {
+            Statement statement = connection.createStatement();
+            ResultSet resultSet = statement.executeQuery(query);
+            while (resultSet.next()) {
+                String bowler = resultSet.getString("bowler");
+                Integer runsGiven = resultSet.getInt("runs_given");
+                bowlerPerRunGiven.put(bowler, runsGiven);
             }
-        }
-
-        for (Delivery delivery : deliveriesData) {
-            if (matchIds.contains(delivery.getMatch_id())) {
-                if (!bowlerPerRunGiven.containsKey(delivery.getBowler())) {
-                    bowlerPerRunGiven.put(delivery.getBowler(), Integer.parseInt(delivery.getTotalRuns()));
-                } else {
-                    bowlerPerRunGiven.put(delivery.getBowler(), bowlerPerRunGiven.get(delivery.getBowler())
-                            + Integer.parseInt(delivery.getTotalRuns()));
-                }
-            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
         System.out.println("\n\nBOWLERS => RUN GIVEN");
         for (Map.Entry<String, Integer> entry : bowlerPerRunGiven.entrySet())
             System.out.println(entry.getKey() +
                     " => " + entry.getValue());
-
+        System.out.println("\n\n");
     }
 
-    private static void findExtraRunsPerTeamsIn2016(List<Match> matchesData, List<Delivery> deliveriesData) {
+    private static void findExtraRunsPerTeamsIn2016(List<Match> matches, List<Delivery> deliveries) {
         HashMap<String, Integer> teamPerExtraRuns = new HashMap<>();
-        LinkedHashSet<String> matchIds = new LinkedHashSet<>();
-        for (Match match : matchesData) {
-            if (match.getSeason().equals("2016")) {
-                matchIds.add(match.getId());
+        String query = """
+                select ipl.deliveries.batting_team,sum(ipl.deliveries.extra_runs) as extra_runs\s
+                from ipl.deliveries inner join ipl.matches
+                on ipl.matches.id=ipl.deliveries.match_id\s
+                where ipl.matches.season='2016'\s
+                group by ipl.deliveries.batting_team""";
+        try {
+            Statement statement = connection.createStatement();
+            ResultSet resultSet = statement.executeQuery(query);
+            while (resultSet.next()) {
+                String teams = resultSet.getString("batting_team");
+                Integer extraRuns = resultSet.getInt("extra_runs");
+                teamPerExtraRuns.put(teams, extraRuns);
             }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
-        for (Delivery delivery : deliveriesData) {
-            if (matchIds.contains(delivery.getMatch_id())) {
-                if (!teamPerExtraRuns.containsKey(delivery.getBattingTeam())) {
-                    teamPerExtraRuns.put(delivery.getBattingTeam(), Integer.parseInt(delivery.getExtraRuns()));
-                } else {
-                    teamPerExtraRuns.put(delivery.getBattingTeam(), teamPerExtraRuns.get(delivery.getBattingTeam())
-                            + Integer.parseInt(delivery.getExtraRuns()));
-                }
-            }
-        }
         System.out.println("\n\nTEAMS =>  EXTRA RUNS");
         for (Map.Entry<String, Integer> entry : teamPerExtraRuns.entrySet())
             System.out.println(entry.getKey() +
                     " => " + entry.getValue());
 
-
+        System.out.println("\n\n");
     }
 
-
-    private static List<Delivery> getDeliveryData() {
-        String deliveryData;
-        List<Delivery> deliveryDataList = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader("deliveries.csv"))) {
-            while ((deliveryData = br.readLine()) != null) {
-                String[] deliveryDataColumn = deliveryData.split(","); //split delivery data by ","(comma)
-                Delivery delivery = new Delivery();
-                delivery.setMatch_id(deliveryDataColumn[MATCH_ID]);
-                delivery.setInning(deliveryDataColumn[INNING]);
-                delivery.setBattingTeam(deliveryDataColumn[BATTING_TEAM]);
-                delivery.setBowlingTeam(deliveryDataColumn[BOWLING_TEAM]);
-                delivery.setOver(deliveryDataColumn[OVER]);
-                delivery.setBall(deliveryDataColumn[BAlL]);
-                delivery.setBatsman(deliveryDataColumn[BATSMAN]);
-                delivery.setNonStriker(deliveryDataColumn[NON_STRIKER]);
-                delivery.setBowler(deliveryDataColumn[BOWLER]);
-                delivery.setIsSuperOver(deliveryDataColumn[IS_SUPER_OVER]);
-                delivery.setWideRuns(deliveryDataColumn[WIDE_RUNS]);
-                delivery.setByeRuns(deliveryDataColumn[BYE_RUNS]);
-                delivery.setNoBallRuns(deliveryDataColumn[NOBALL_RUNS]);
-                delivery.setLegByeRuns(deliveryDataColumn[LEGBYE_RUNS]);
-                delivery.setPenaltyRuns(deliveryDataColumn[PENALTY_RUNS]);
-                delivery.setBatsmanRuns(deliveryDataColumn[BATSMAN_RUN]);
-                delivery.setExtraRuns(deliveryDataColumn[EXTRA_RUNS]);
-                delivery.setTotalRuns(deliveryDataColumn[TOTAL_RUNS]);
-                deliveryDataList.add(delivery);
+    private static void findMatchesWonPerTeam(List<Match> matches) {
+        HashMap<String, Integer> matchesWonPerTeam = new HashMap<>();
+        String query = "select ipl.matches.team1,count(ipl.matches.winner) as matches_won from ipl.matches group by ipl.matches.winner";
+        try {
+            Statement statement = connection.createStatement();
+            ResultSet resultSet = statement.executeQuery(query);
+            while (resultSet.next()) {
+                String teams = resultSet.getString("team1");
+                Integer matchesWon = resultSet.getInt("matches_won");
+                matchesWonPerTeam.put(teams, matchesWon);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return deliveryDataList;
-    }
 
-
-    private static List<Match> getMatchesData() {
-
-        int counter = 0;
-        String matchData;
-        List<Match> matchDataList = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader("matches.csv"))) {
-            while ((matchData = br.readLine()) != null) {
-                Match match = new Match();
-                if (counter == 0) {
-                    counter++;
-                    continue;
-                }
-                String[] matchDataColumn = matchData.split(","); // splitting matches.csv data by ","(comma)
-                match.setId(matchDataColumn[ID]);
-                match.setSeason(matchDataColumn[SEASON]);
-                match.setCity(matchDataColumn[CITY]);
-                match.setDate(matchDataColumn[TEAM1]);
-                match.setTeam1(matchDataColumn[TEAM2]);
-                match.setTeam2(matchDataColumn[TOSS_WINNER]);
-                match.setTossDecision(matchDataColumn[TOSS_DECISION]);
-                match.setWinner(matchDataColumn[WINNER]);
-                matchDataList.add(match);
-            }
-        } catch (Exception e) {
-            e.getStackTrace();
-        }
-        return matchDataList;
-    }
-
-
-    private static void findMatchesWonPerTeam(List<Match> matchesData) {
-        HashMap<String, Integer> matchesWonPerTeam = new HashMap<>();
-        for (Match match : matchesData) {
-            if (!matchesWonPerTeam.containsKey(match.getTeam1())) {
-                matchesWonPerTeam.put(match.getTeam1(), 0);
-            }
-            if (!matchesWonPerTeam.containsKey(match.getTeam2())) {
-                matchesWonPerTeam.put(match.getTeam2(), 0);
-            }
-            if (!matchesWonPerTeam.containsKey(match.getWinner())) {
-                matchesWonPerTeam.put(match.getWinner(), 0);
-            } else {
-                matchesWonPerTeam.put(match.getWinner(), 1 + matchesWonPerTeam.get(match.getWinner()));
-            }
-        }
         //to remove blank key if present
         matchesWonPerTeam.remove("");
 
@@ -183,21 +132,29 @@ public class Main {
         for (Map.Entry<String, Integer> entry : matchesWonPerTeam.entrySet())
             System.out.println(entry.getKey() +
                     " => " + entry.getValue());
+        System.out.println("\n\n");
     }
 
     private static void findMatchesPlayedPerYear(List<Match> matches) {
-        HashMap<String, Integer> matchesPlayedPerYear = new HashMap<>();
-        for (Match match : matches) {
-            if (matchesPlayedPerYear.containsKey(match.getSeason())) {
-                matchesPlayedPerYear.put(match.getSeason(), 1 + matchesPlayedPerYear.get(match.getSeason()));
-            } else {
-                matchesPlayedPerYear.put(match.getSeason(), 1);
+        LinkedHashMap<String, Integer> matchesPlayedPerYear = new LinkedHashMap<>();
+        String query = "select ipl.matches.season, count(ipl.matches.season) as total_matches from ipl.matches group by ipl.matches.season order by ipl.matches.season";
+        try {
+            Statement statement = connection.createStatement();
+            ResultSet resultSet = statement.executeQuery(query);
+            while (resultSet.next()) {
+                String season = resultSet.getString("season");
+                Integer totalMatches = resultSet.getInt("total_matches");
+                matchesPlayedPerYear.put(season, totalMatches);
             }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
         System.out.println("\n\nSEASON => MATCHES PLAYED");
         for (Map.Entry<String, Integer> entry : matchesPlayedPerYear.entrySet())
             System.out.println(entry.getKey() +
                     " => " + entry.getValue());
+        System.out.println("\n\n");
     }
+
 }
