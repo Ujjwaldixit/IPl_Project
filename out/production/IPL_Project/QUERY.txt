@@ -1,0 +1,34 @@
+SQL QUERIES
+
+1. select ipl.matches.season, count(ipl.matches.season) as total_matches from ipl.matches group by ipl.matches.season order by ipl.matches.season;
+
+2. select ipl.matches.team1,count(ipl.matches.winner) as matches_won from ipl.matches group by ipl.matches.winner;
+
+3. select ipl.deliveries.batting_team,sum(ipl.deliveries.extra_runs) as extra_runs
+   from ipl.deliveries inner join ipl.matches
+   on ipl.matches.id=ipl.deliveries.match_id
+   where ipl.matches.season='2016'
+   group by ipl.deliveries.batting_team;
+
+4.  select ipl.deliveries.bowler,sum(ipl.deliveries.total_runs) as runs_given
+    from ipl.deliveries
+    inner join ipl.matches on ipl.matches.id=ipl.deliveries.match_ids
+    where ipl.matches.season='2015'
+    group by ipl.deliveries.bowlers
+    order by sum(ipl.deliveries.total_runs);
+
+5.select ipl.matches.city, count(ipl.matches.city) as total_matches from ipl.matches group by ipl.matches.city;   //total matches played per city
+
+
+
+PostgreSQL
+
+1. select matches.season, count(matches.season) as total_matches from matches group by matches.season order by matches.season;
+
+2. select matches.team1,count(matches.winner) as matches_won from matches group by matches.winner; 
+
+3. select deliveries.batting_team,sum(deliveries.extra_runs) as extra_runs from deliveries inner join matches on matches.id=deliveries.match_id where matches.season='2016' group by deliveries.batting_team;
+
+4. select deliveries.bowler,sum(deliveries.total_runs) as runs_given from deliveries inner join matches on matches.id=ipl.deliveries.match_ids where ipl.matches.season='2015' group by ipl.deliveries.bowlers order by sum(ipl.deliveries.total_runs);
+
+5. select matches.city, count(matches.city) as total_matches from matches group by matches.city;
